@@ -142,15 +142,23 @@ async function run() {
         ],
         customer_email: paymentInfo.senderEmail,
         mode: "payment",
-        meta_data: {
+        metadata: {
           parcelId: paymentInfo.parcelId,
         },
-        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-canceled`,
       });
+      console.log(session);
+      res.send({ url: session.url });
 
       // res.redirect(303, session.url);
     });
+
+    // payment success related api
+    app.patch("/payment-success",async (req,res)=>{
+      const sessionId=req.params.session_id;
+      res.send({status:true})
+    })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
