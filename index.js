@@ -1,35 +1,59 @@
+require("dotenv").config();
+
+// Core imports
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
-const nodemon = require("nodemon");
+const crypto = require("crypto");
+
+// Firebase
+const admin = require("firebase-admin");
+const serviceAccount = require("./zap-shift.json");
+
+// MongoDB
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+
+// Stripe
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
+
+// App init
 const app = express();
+const port = process.env.PORT || 3000;
 
-// Middle ware
-
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-const port = process.env.PORT || 3000;
- const crypto=require("crypto")
+// Firebase initialization
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
+// Firebase token verification middleware
+const verifyFToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized accessed " });
+  }
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    res.status(401).send({ message: "Unauthorized accessed " });
+  }
+};
+
+// Tracking ID generator
 function generateTrackingId() {
-  const prefix = "ZP"; // change if you want
+  const prefix = "ZP";
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const random = crypto.randomBytes(4).toString("hex").toUpperCase(); // 8 chars
+  const random = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `${prefix}-${date}-${random}`;
 }
 
-
-// here setup the database url
-
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-// Stripe url
-
-const stripe = require("stripe")(process.env.STRIPE_SECRET);
-
+// MongoDB connection
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.g6tkuix.mongodb.net/?appName=Cluster0`;
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -40,42 +64,36 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
     const database = client.db("Zap_shift_db");
     const parcelCollection = database.collection("parcels");
-    const paymentCollection=database.collection("payments")
+    const paymentCollection = database.collection("payments");
 
-    // get data form database
+    // =============================
+    // PARCEL APIs
+    // =============================
+
+    // Get parcels
     app.get("/parcels", async (req, res) => {
       try {
-        // console.log(req.query)
         const query = {};
         const options = { sort: { createdAt: -1 } };
-
         const { email } = req.query;
-        if (email) {
-          query.senderEmail = email;
-        }
-
-        const cursor = parcelCollection.find(query, options);
-        const result = await cursor.toArray();
+        if (email) query.senderEmail = email;
+        const result = await parcelCollection.find(query, options).toArray();
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: "Internal server error ",
-        });
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error " });
       }
     });
 
-    // post data into database
-
+    // Post parcel
     app.post("/parcels", async (req, res) => {
       try {
         const parcel = req.body;
-
         parcel.createdAt = new Date();
         const result = await parcelCollection.insertOne(parcel);
         res.send({
@@ -84,14 +102,13 @@ async function run() {
           data: result,
         });
       } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: "Internal server error",
-        });
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
       }
     });
 
-    // Delete api is here
+    // Delete parcel
     app.delete("/parcels/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -99,53 +116,46 @@ async function run() {
         const result = await parcelCollection.deleteOne(query);
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: "Internal server error",
-        });
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
       }
     });
 
-    //Find one parcels to payment
+    // Get parcel by ID
     app.get("/parcels/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
         const result = await parcelCollection.findOne(query);
-
-        //  if not found
         if (!result) {
-          return res.status(404).send({
-            success: false,
-            message: "Parcel not found",
-          });
+          return res
+            .status(404)
+            .send({ success: false, message: "Parcel not found" });
         }
-
-        // success
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          success: false,
-          message: "Internal server error",
-        });
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
       }
     });
 
-    // Payment related api
+    // =============================
+    // PAYMENT APIs
+    // =============================
 
+    // Stripe checkout session create
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo.cost) * 100;
       const session = await stripe.checkout.sessions.create({
         line_items: [
           {
-            // Provide the exact Price ID (for example, price_1234) of the product you want to sell
             price_data: {
               currency: "USD",
               unit_amount: amount,
-              product_data: {
-                name: paymentInfo.parcelName,
-              },
+              product_data: { name: paymentInfo.parcelName },
             },
             quantity: 1,
           },
@@ -159,42 +169,34 @@ async function run() {
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-canceled`,
       });
-      console.log(session);
       res.send({ url: session.url });
-
-      // res.redirect(303, session.url);
     });
 
-
-
-    // payment success related api
-    app.patch("/payment-success",async (req,res)=>{
-      const sessionId=req.query.session_id;
-
+    // Payment success patch
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      const transactionId=session.payment_intent;
-      const query = { transaction: transactionId };
-      const findByTId=await paymentCollection.findOne(query);
-      console.log(findByTId)
-      if(findByTId){
+      const transactionId = session.payment_intent;
+
+      const exists = await paymentCollection.findOne({
+        transaction: transactionId,
+      });
+      if (exists) {
         return res.send({
-          message:"Parcel is already exits",
+          message: "Parcel is already exists",
           transactionId,
-          trackingId:findByTId.trackingId
-        })
+          trackingId: exists.trackingId,
+        });
       }
 
-      if(session.payment_status==="paid"){
-        const id=session.metadata.parcelId;
-        const query={_id:new ObjectId(id)}
-        const trackingId=generateTrackingId()
-        const update = {
-          $set: {
-            paymentStatus:"paid",
-            trackingId:trackingId
-          },
-        };
-        const result=await parcelCollection.updateOne(query,update)
+      if (session.payment_status === "paid") {
+        const id = session.metadata.parcelId;
+        const trackingId = generateTrackingId();
+
+        await parcelCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { paymentStatus: "paid", trackingId } }
+        );
 
         const paymentHistory = {
           amount: session.amount_total / 100,
@@ -205,54 +207,56 @@ async function run() {
           transaction: session.payment_intent,
           paymentStatus: session.payment_status,
           paidAt: new Date(),
-          trackingId: trackingId,
+          trackingId,
         };
-         if (session.payment_status === "paid"){
-          const paymentResult=await paymentCollection.insertOne(paymentHistory)
-          res.send({
-            success: true,
-            modifyParcel: result,
-            paymentInfo: paymentResult,
-            trackingId: trackingId,
-            transactionId: session.payment_intent,
-          });
-         }
 
-    }})
+        const paymentResult = await paymentCollection.insertOne(paymentHistory);
 
-    
-    // Payment history related api
-     app.get("/payments",async (req,res)=>{
-      const email=req.query.email;
-       const query={}
-       if(email){
-        query .customerEmail=email;
-       }
-       const result=await paymentCollection.find(query).toArray()
-       res.send(result)
+        res.send({
+          success: true,
+          paymentInfo: paymentResult,
+          trackingId,
+          transactionId: session.payment_intent,
+        });
+      }
+    });
 
-     })
+    // Payment history
+    app.get("/payments", verifyFToken, async (req, res) => {
+      const email = req.query.email;
+      const query = {};
 
-  
-      
+      if (email) {
+        query.customerEmail = email;
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "Forbidden accessed " });
+        }
+      }
 
+      const result = await paymentCollection
+        .find(query)
+        .sort({ paidAt: -1 })
+        .toArray();
+      res.send(result);
+    });
 
-
-    // Send a ping to confirm a successful connection
+    // MongoDB ping
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
   } finally {
-    // Ensures that the client will close when you finish/error
   }
 }
+
 run().catch(console.dir);
 
+// Root route
 app.get("/", (req, res) => {
   res.send("zip shift  server is runing !");
 });
 
+// Server start
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
