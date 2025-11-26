@@ -10,6 +10,15 @@ app.use(cors());
 app.use(express.json());
 
 const port = process.env.PORT || 3000;
+ const crypto=require("crypto")
+
+function generateTrackingId() {
+  const prefix = "ZP"; // change if you want
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const random = crypto.randomBytes(4).toString("hex").toUpperCase(); // 8 chars
+  return `${prefix}-${date}-${random}`;
+}
+
 
 // here setup the database url
 
@@ -36,6 +45,7 @@ async function run() {
 
     const database = client.db("Zap_shift_db");
     const parcelCollection = database.collection("parcels");
+    const paymentCollection=database.collection("payments")
 
     // get data form database
     app.get("/parcels", async (req, res) => {
@@ -144,6 +154,7 @@ async function run() {
         mode: "payment",
         metadata: {
           parcelId: paymentInfo.parcelId,
+          name: paymentInfo.parcelName,
         },
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-canceled`,
@@ -154,11 +165,78 @@ async function run() {
       // res.redirect(303, session.url);
     });
 
+
+
     // payment success related api
     app.patch("/payment-success",async (req,res)=>{
-      const sessionId=req.params.session_id;
-      res.send({status:true})
-    })
+      const sessionId=req.query.session_id;
+
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const transactionId=session.payment_intent;
+      const query = { transaction: transactionId };
+      const findByTId=await paymentCollection.findOne(query);
+      console.log(findByTId)
+      if(findByTId){
+        return res.send({
+          message:"Parcel is already exits",
+          transactionId,
+          trackingId:findByTId.trackingId
+        })
+      }
+
+      if(session.payment_status==="paid"){
+        const id=session.metadata.parcelId;
+        const query={_id:new ObjectId(id)}
+        const trackingId=generateTrackingId()
+        const update = {
+          $set: {
+            paymentStatus:"paid",
+            trackingId:trackingId
+          },
+        };
+        const result=await parcelCollection.updateOne(query,update)
+
+        const paymentHistory = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          parcelId: session.metadata.parcelId,
+          parcelName: session.metadata.name,
+          transaction: session.payment_intent,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+          trackingId: trackingId,
+        };
+         if (session.payment_status === "paid"){
+          const paymentResult=await paymentCollection.insertOne(paymentHistory)
+          res.send({
+            success: true,
+            modifyParcel: result,
+            paymentInfo: paymentResult,
+            trackingId: trackingId,
+            transactionId: session.payment_intent,
+          });
+         }
+
+    }})
+
+    
+    // Payment history related api
+     app.get("/payments",async (req,res)=>{
+      const email=req.query.email;
+       const query={}
+       if(email){
+        query .customerEmail=email;
+       }
+       const result=await paymentCollection.find(query).toArray()
+       res.send(result)
+
+     })
+
+  
+      
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
