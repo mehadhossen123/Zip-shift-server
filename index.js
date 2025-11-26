@@ -66,13 +66,43 @@ async function run() {
   try {
     await client.connect();
 
+    // create database and collection
     const database = client.db("Zap_shift_db");
     const parcelCollection = database.collection("parcels");
     const paymentCollection = database.collection("payments");
+    const userCollection = database.collection("users");
 
     // =============================
     // PARCEL APIs
     // =============================
+
+    // User related api
+    app.post("/users", async (req, res) => {
+      try {
+        const user = req.body;
+        const exists = await userCollection.findOne({ email: user?.email });
+        if (exists) {
+          return res.status(409).send({
+            success: false,
+            message: "User already exists",
+          });
+        }
+
+        user.role = "user";
+        user.createdAt = new Date();
+        const result = await userCollection.insertOne(user);
+        res.status(201).send({
+          success: true,
+          message: "User successfully created ",
+          data: result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Internal server error ",
+        });
+      }
+    });
 
     // Get parcels
     app.get("/parcels", async (req, res) => {
