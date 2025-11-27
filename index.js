@@ -71,6 +71,7 @@ async function run() {
     const parcelCollection = database.collection("parcels");
     const paymentCollection = database.collection("payments");
     const userCollection = database.collection("users");
+    const riderCollection=database.collection("riders")
 
     // =============================
     // PARCEL APIs
@@ -103,6 +104,58 @@ async function run() {
         });
       }
     });
+
+    //Riders related aip
+
+    app.post("/riders",async(req,res)=>{
+      try{
+        const rider=req.body;
+        const existsRider=await riderCollection.findOne({riderEmail:rider?.riderEmail})
+
+        if (existsRider) {
+          return res.status(409).send({
+            success: false,
+            message: "User already exists",
+          });
+        }
+
+        rider.status="Pending"
+        rider.createdAt=new Date();
+        const result=await riderCollection.insertOne(rider)
+        res.status(201).send({
+          success:true,
+          data:result
+        })
+
+      }
+      catch(error){
+        res.status(500).send({
+          success:false,
+          message:"Internal server error"
+        })
+      }
+    })
+    // Get all riders
+    app.get("/riders",async(req,res)=>{
+      try{
+         const query={};
+      if(req.query.status){
+        query.status=req.query.status;
+      }
+      const result=await riderCollection.find(query).toArray()
+      res.status(202).send({
+        success:true,
+        data:result
+      })
+      }
+      catch(error){
+        res.status(500).send({
+          success: false,
+          message: "Internal server error",
+        });
+
+      }
+    })
 
     // Get parcels
     app.get("/parcels", async (req, res) => {
