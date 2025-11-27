@@ -66,7 +66,7 @@ async function run() {
   try {
     await client.connect();
 
-    // create database and collection
+    //========&&& create database and collection===========$$$
     const database = client.db("Zap_shift_db");
     const parcelCollection = database.collection("parcels");
     const paymentCollection = database.collection("payments");
@@ -77,7 +77,26 @@ async function run() {
     // PARCEL APIs
     // =============================
 
-    // User related api
+    // **======User related api================***
+
+    //  Get user from database
+    app.get("/users", verifyFToken, async (req, res) => {
+      try {
+        const result = await userCollection.find().toArray();
+        res.status(201).send({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Internal server error ",
+        });
+      }
+    });
+
+    // Save user into database
+
     app.post("/users", async (req, res) => {
       try {
         const user = req.body;
@@ -105,7 +124,52 @@ async function run() {
       }
     });
 
-    //Riders related aip
+    // Patch users role
+    app.patch("/users/:id", async (req, res) => {
+      try {
+        const userId = req.params.id;
+        const role = req.body.role;
+        const query = { _id: new ObjectId(userId) };
+
+        const updateRole = {
+          $set: {
+            role,
+          },
+        };
+        const result = await userCollection.updateOne(query, updateRole);
+        res.status(201).send({
+          success: true,
+          message: "User marked as a admin ",
+          data: result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+    // get user role by email
+    app.get("/users/:email/role",async (req,res)=>{
+      try{
+         const email=req.params.email;
+        const query={email};
+        const result=await userCollection.findOne(query)
+        res.status(201).send({role:result?.role||"user"})
+      }
+      catch(error){
+         res.status(500).send({
+           success: false,
+           message: "Internal server error",
+         });
+
+      }
+    })
+      
+
+    
+
+    //==========Riders related aip=========
 
     app.post("/riders", async (req, res) => {
       try {
@@ -155,24 +219,38 @@ async function run() {
       }
     });
 
-    
     // Approve rider
     app.patch("/riders/:id", verifyFToken, async (req, res) => {
       try {
         const riderId = req.params.id;
-        const status = req.query.status;
+        const status = req.body.status;
         const query = { _id: new ObjectId(riderId) };
         const updateInfo = {
           $set: {
             status: status,
           },
         };
-        const result = await riderCollection.updateOne(query,updateInfo);
+        const result = await riderCollection.updateOne(query, updateInfo);
         res.status(201).send({
           success: true,
           message: "Update successful",
           data: result,
         });
+
+        //   update user role as a rider
+        if (status === "Approved") {
+          const email = req.body.email;
+          const userQuery = { email };
+          const updateUser = {
+            $set: {
+              role: "rider",
+            },
+          };
+          const userResult = await userCollection.updateOne(
+            userQuery,
+            updateUser
+          );
+        }
       } catch (error) {
         res.status(500).send({
           success: false,
