@@ -71,7 +71,7 @@ async function run() {
     const parcelCollection = database.collection("parcels");
     const paymentCollection = database.collection("payments");
     const userCollection = database.collection("users");
-    const riderCollection=database.collection("riders")
+    const riderCollection = database.collection("riders");
 
     // =============================
     // PARCEL APIs
@@ -107,10 +107,12 @@ async function run() {
 
     //Riders related aip
 
-    app.post("/riders",async(req,res)=>{
-      try{
-        const rider=req.body;
-        const existsRider=await riderCollection.findOne({riderEmail:rider?.riderEmail})
+    app.post("/riders", async (req, res) => {
+      try {
+        const rider = req.body;
+        const existsRider = await riderCollection.findOne({
+          riderEmail: rider?.riderEmail,
+        });
 
         if (existsRider) {
           return res.status(409).send({
@@ -119,43 +121,65 @@ async function run() {
           });
         }
 
-        rider.status="Pending"
-        rider.createdAt=new Date();
-        const result=await riderCollection.insertOne(rider)
+        rider.status = "Pending";
+        rider.createdAt = new Date();
+        const result = await riderCollection.insertOne(rider);
         res.status(201).send({
-          success:true,
-          data:result
-        })
-
-      }
-      catch(error){
-        res.status(500).send({
-          success:false,
-          message:"Internal server error"
-        })
-      }
-    })
-    // Get all riders
-    app.get("/riders",async(req,res)=>{
-      try{
-         const query={};
-      if(req.query.status){
-        query.status=req.query.status;
-      }
-      const result=await riderCollection.find(query).toArray()
-      res.status(202).send({
-        success:true,
-        data:result
-      })
-      }
-      catch(error){
+          success: true,
+          data: result,
+        });
+      } catch (error) {
         res.status(500).send({
           success: false,
           message: "Internal server error",
         });
-
       }
-    })
+    });
+    // Get all riders
+    app.get("/riders", async (req, res) => {
+      try {
+        const query = {};
+        if (req.query.status) {
+          query.status = req.query.status;
+        }
+        const result = await riderCollection.find(query).toArray();
+        res.status(202).send({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    
+    // Approve rider
+    app.patch("/riders/:id", verifyFToken, async (req, res) => {
+      try {
+        const riderId = req.params.id;
+        const status = req.query.status;
+        const query = { _id: new ObjectId(riderId) };
+        const updateInfo = {
+          $set: {
+            status: status,
+          },
+        };
+        const result = await riderCollection.updateOne(query,updateInfo);
+        res.status(201).send({
+          success: true,
+          message: "Update successful",
+          data: result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
 
     // Get parcels
     app.get("/parcels", async (req, res) => {
