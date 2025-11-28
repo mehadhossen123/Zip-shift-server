@@ -77,6 +77,30 @@ async function run() {
     // PARCEL APIs
     // =============================
 
+    // ==========Middleware  to Verify admin=========
+    // ---must use after firebase verify id token 
+    const verifyAdmin=async(req,res,next)=>{
+   try{
+     const email=req.decoded_email;
+     const user=await userCollection.findOne({email:email});
+      if(user?.role!=="admin"){
+        return res.status(403).send({
+          message:"Forbidden accessed"
+        })
+      }
+       next()
+   }
+   catch(error){
+     res.status(500).send({
+       success: false,
+       message: "Internal server error ",
+     });
+    
+   }
+     
+    }
+
+
     // **======User related api================***
 
     //  Get user from database
@@ -125,7 +149,7 @@ async function run() {
     });
 
     // Patch users role
-    app.patch("/users/:id", async (req, res) => {
+    app.patch("/users/:id/role",verifyFToken,verifyAdmin, async (req, res) => {
       try {
         const userId = req.params.id;
         const role = req.body.role;
@@ -150,7 +174,7 @@ async function run() {
       }
     });
     // get user role by email
-    app.get("/users/:email/role",async (req,res)=>{
+    app.get("/users/:email/role",verifyFToken, async (req,res)=>{
       try{
          const email=req.params.email;
         const query={email};
@@ -220,7 +244,7 @@ async function run() {
     });
 
     // Approve rider
-    app.patch("/riders/:id", verifyFToken, async (req, res) => {
+    app.patch("/riders/:id", verifyFToken, verifyAdmin,async (req, res) => {
       try {
         const riderId = req.params.id;
         const status = req.body.status;
