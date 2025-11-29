@@ -78,35 +78,45 @@ async function run() {
     // =============================
 
     // ==========Middleware  to Verify admin=========
-    // ---must use after firebase verify id token 
-    const verifyAdmin=async(req,res,next)=>{
-   try{
-     const email=req.decoded_email;
-     const user=await userCollection.findOne({email:email});
-      if(user?.role!=="admin"){
-        return res.status(403).send({
-          message:"Forbidden accessed"
-        })
+    // ---must use after firebase verify id token
+    const verifyAdmin = async (req, res, next) => {
+      try {
+        const email = req.decoded_email;
+        const user = await userCollection.findOne({ email: email });
+        if (user?.role !== "admin") {
+          return res.status(403).send({
+            message: "Forbidden accessed",
+          });
+        }
+        next();
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Internal server error ",
+        });
       }
-       next()
-   }
-   catch(error){
-     res.status(500).send({
-       success: false,
-       message: "Internal server error ",
-     });
-    
-   }
-     
-    }
-
+    };
 
     // **======User related api================***
 
     //  Get user from database
     app.get("/users", verifyFToken, async (req, res) => {
       try {
-        const result = await userCollection.find().toArray();
+        // Find specific  user by search
+        const name = req.query.name;
+        const query = {};
+        if (name) {
+          query.$or = [
+            { displayName: { $regex: name, $options: "i" } },
+            { email: { $regex: name, $options: "i" } },
+          ];
+        }
+
+        const result = await userCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .toArray();
         res.status(201).send({
           success: true,
           data: result,
@@ -149,23 +159,42 @@ async function run() {
     });
 
     // Patch users role
-    app.patch("/users/:id/role",verifyFToken,verifyAdmin, async (req, res) => {
-      try {
-        const userId = req.params.id;
-        const role = req.body.role;
-        const query = { _id: new ObjectId(userId) };
+    app.patch(
+      "/users/:id/role",
+      verifyFToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const userId = req.params.id;
+          const role = req.body.role;
+          const query = { _id: new ObjectId(userId) };
 
-        const updateRole = {
-          $set: {
-            role,
-          },
-        };
-        const result = await userCollection.updateOne(query, updateRole);
-        res.status(201).send({
-          success: true,
-          message: "User marked as a admin ",
-          data: result,
-        });
+          const updateRole = {
+            $set: {
+              role,
+            },
+          };
+          const result = await userCollection.updateOne(query, updateRole);
+          res.status(201).send({
+            success: true,
+            message: "User marked as a admin ",
+            data: result,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            message: "Internal server error",
+          });
+        }
+      }
+    );
+    // get user role by email
+    app.get("/users/:email/role", verifyFToken, async (req, res) => {
+      try {
+        const email = req.params.email;
+        const query = { email };
+        const result = await userCollection.findOne(query);
+        res.status(201).send({ role: result?.role || "user" });
       } catch (error) {
         res.status(500).send({
           success: false,
@@ -173,25 +202,6 @@ async function run() {
         });
       }
     });
-    // get user role by email
-    app.get("/users/:email/role",verifyFToken, async (req,res)=>{
-      try{
-         const email=req.params.email;
-        const query={email};
-        const result=await userCollection.findOne(query)
-        res.status(201).send({role:result?.role||"user"})
-      }
-      catch(error){
-         res.status(500).send({
-           success: false,
-           message: "Internal server error",
-         });
-
-      }
-    })
-      
-
-    
 
     //==========Riders related aip=========
 
@@ -226,10 +236,20 @@ async function run() {
     // Get all riders
     app.get("/riders", async (req, res) => {
       try {
+        const {workStatus,district,status}=req.query;
         const query = {};
-        if (req.query.status) {
-          query.status = req.query.status;
+        if (status) {
+          query.status = status;
         }
+        if(workStatus){
+          query.workStatus=workStatus;
+        }
+        if(district){
+          query.riderDistrict=district;
+        }
+        
+       
+        
         const result = await riderCollection.find(query).toArray();
         res.status(202).send({
           success: true,
@@ -244,7 +264,7 @@ async function run() {
     });
 
     // Approve rider
-    app.patch("/riders/:id", verifyFToken, verifyAdmin,async (req, res) => {
+    app.patch("/riders/:id", verifyFToken, verifyAdmin, async (req, res) => {
       try {
         const riderId = req.params.id;
         const status = req.body.status;
@@ -252,6 +272,7 @@ async function run() {
         const updateInfo = {
           $set: {
             status: status,
+            workStatus:"available"
           },
         };
         const result = await riderCollection.updateOne(query, updateInfo);
@@ -283,13 +304,21 @@ async function run() {
       }
     });
 
-    // Get parcels
+    // Get parcels api  form the database 
     app.get("/parcels", async (req, res) => {
       try {
         const query = {};
         const options = { sort: { createdAt: -1 } };
-        const { email } = req.query;
-        if (email) query.senderEmail = email;
+        const { email, deliveryStatus } = req.query;
+
+        if (email){
+           query.senderEmail = email;
+        }
+
+
+        if(deliveryStatus) {
+          query.deliveryStatus=deliveryStatus;
+        }
         const result = await parcelCollection.find(query, options).toArray();
         res.send(result);
       } catch (error) {
@@ -404,7 +433,7 @@ async function run() {
 
         await parcelCollection.updateOne(
           { _id: new ObjectId(id) },
-          { $set: { paymentStatus: "paid", trackingId } }
+          { $set: { paymentStatus: "paid",deliveryStatus:"pending-pickup", trackingId } }
         );
 
         const paymentHistory = {
