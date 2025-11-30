@@ -303,6 +303,7 @@ async function run() {
         });
       }
     });
+    // ==========Parcel related api===========//
 
     // Get parcels api  form the database 
     app.get("/parcels", async (req, res) => {
@@ -345,6 +346,84 @@ async function run() {
           .send({ success: false, message: "Internal server error" });
       }
     });
+    // Get parcels for the assigned riders 
+    app.get("/parcels/rider",async (req,res)=>{
+      try{
+        const { riderEmail, deliveryStatus } = req.query;
+      const query={}
+      if(!riderEmail || !deliveryStatus){
+        return res.send([])
+      }
+      if(riderEmail){
+        query.riderEmail=riderEmail;
+      }
+      if(deliveryStatus){
+        query.deliveryStatus=deliveryStatus;
+      }
+      const result=await parcelCollection.find(query).toArray()
+      res.send(result)
+
+      }
+      catch(error){
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+
+      }
+
+
+    })
+    // Patch parcel
+    app.patch("/parcels/:id",async(req,res)=>{
+      const { riderId, riderName, riderEmail } = req.body;
+      const parcelsId=req.params.id;
+      const query={_id:new ObjectId(parcelsId)}
+      const parcelUpdateInfo = {
+        $set: {
+          deliveryStatus:"rider_assigned",
+          riderId:riderId,
+          riderName:riderName,
+          riderEmail:riderEmail
+        }
+      };
+      const  result=await parcelCollection.updateOne(query,parcelUpdateInfo)
+
+      
+      // Update parcel status depend on rider accept or reject 
+      app.patch("parcels/:id/status",async(req,res)=>{
+        try{
+          const { deliveryStatus } = req.body;
+        const query={_id:new ObjectId(req.params.id)}
+        const updateInfo={
+          $set:{
+            deliveryStatus:deliveryStatus
+          }
+        }
+        const result = await parcelCollection.updateOne(query, updateInfo);
+        res. send(result)
+        }
+        catch(error){
+          res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+
+      
+
+        }
+      })
+
+
+      // Rider work status update 
+      const riderQuery={_id:new ObjectId(riderId)};
+      const riderUpdateInfo={
+        $set:{
+          workStatus:"in_delivery"
+        }
+      
+      }
+        const riderResult=await riderCollection.updateOne(riderQuery,riderUpdateInfo)
+        res.send(riderResult)
+    })
 
     // Delete parcel
     app.delete("/parcels/:id", async (req, res) => {
