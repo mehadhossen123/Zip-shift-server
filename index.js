@@ -99,16 +99,37 @@ async function run() {
     };
     // ++++++++++++++Tracking related function ++++++++++
     const logTracking=async(trackingId,status)=>{
+      const logExist=await trackingsCollection.findOne({trackingId,status});
+      if(!logExist){
+        const log = {
+          trackingId,
+          status,
+          details: status.split("-").join(" "),
+          createdAt: new Date(),
+        };
+        const result = await trackingsCollection.insertOne(log);
+        return result;
 
-      const log={
-        trackingId,
-        status,
-        details:status.split('-').join(" "),
-        createdAt:new  Date()
       }
-      const result=await  trackingsCollection.insertOne(log)
-      return result;
+
+      
     }
+    // *****==========Tracking related aip==============********
+    app.get("/tracking/:trackingId/logs",async(req,res)=>{
+      try{
+        const trackingId=req.params.trackingId;
+      const query={trackingId};
+      const result=await trackingsCollection.find(query).toArray()
+      res.send(result)
+      }
+      catch(error){
+        res.status(500).send({
+          success: false,
+          message: "Internal server error ",
+        });
+
+      }
+    })
 
     // **======User related api================***
 
@@ -383,9 +404,11 @@ async function run() {
           .send({ success: false, message: "Internal server error" });
       }
     });
+
+
     // Patch parcel
     app.patch("/parcels/:id", async (req, res) => {
-      const { riderId, riderName, riderEmail } = req.body;
+      const { riderId, riderName, riderEmail,trackingId } = req.body;
       const parcelsId = req.params.id;
       const query = { _id: new ObjectId(parcelsId) };
       const parcelUpdateInfo = {
@@ -410,13 +433,15 @@ async function run() {
         riderQuery,
         riderUpdateInfo
       );
+      // tracking  log 
+      logTracking(trackingId, "rider_assigned");
       res.send(riderResult);
     });
 
     // Update parcel status depend on rider accept or reject marked delivered or marked picked up 
     app.patch("/parcels/:id/status", async (req, res) => {
       try {
-        const { deliveryStatus,riderId} = req.body;
+        const { deliveryStatus,riderId,trackingId} = req.body;
 
         const query = { _id: new ObjectId(req.params.id) };
         const updateInfo = {
@@ -440,7 +465,8 @@ async function run() {
             riderUpdateInfo
           );
         }
-      
+          // tracking log 
+          logTracking(trackingId,deliveryStatus)
 
         res.send(result);
       } catch (error) {
@@ -530,10 +556,11 @@ async function run() {
           trackingId: exists.trackingId,
         });
       }
+        const trackingId = generateTrackingId();
 
       if (session.payment_status === "paid") {
         const id = session.metadata.parcelId;
-        const trackingId = generateTrackingId();
+      
 
         await parcelCollection.updateOne(
           { _id: new ObjectId(id) },
@@ -557,15 +584,23 @@ async function run() {
           paidAt: new Date(),
           trackingId,
         };
+         if (session.payment_status === "paid"){
+          const paymentResult = await paymentCollection.insertOne(
+            paymentHistory
+          );
 
-        const paymentResult = await paymentCollection.insertOne(paymentHistory);
+          logTracking(trackingId,"pending-pickup")
 
-        res.send({
-          success: true,
-          paymentInfo: paymentResult,
-          trackingId,
-          transactionId: session.payment_intent,
-        });
+          res.send({
+            success: true,
+            paymentInfo: paymentResult,
+            trackingId,
+            transactionId: session.payment_intent,
+          });
+
+         }
+
+        
       }
     });
 
