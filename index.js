@@ -72,6 +72,7 @@ async function run() {
     const paymentCollection = database.collection("payments");
     const userCollection = database.collection("users");
     const riderCollection = database.collection("riders");
+    const trackingsCollection = database.collection("trackings");
 
     // =============================
     // PARCEL APIs
@@ -96,6 +97,18 @@ async function run() {
         });
       }
     };
+    // ++++++++++++++Tracking related function ++++++++++
+    const logTracking=async(trackingId,status)=>{
+
+      const log={
+        trackingId,
+        status,
+        details:status.split('-').join(" "),
+        createdAt:new  Date()
+      }
+      const result=await  trackingsCollection.insertOne(log)
+      return result;
+    }
 
     // **======User related api================***
 
@@ -345,7 +358,7 @@ async function run() {
     });
 
 
-    // Get parcels for the assigned riders
+    // Get parcels for the assigned riders and specific riders to completed there task 
     app.get("/parcels/rider", async (req, res) => {
       try {
         const { riderEmail, deliveryStatus } = req.query;
@@ -356,8 +369,11 @@ async function run() {
         if (riderEmail) {
           query.riderEmail = riderEmail;
         }
-        if (deliveryStatus) {
+        if (deliveryStatus !== "parcel_delivered") {
           query.deliveryStatus = { $nin: ["parcel_delivered"] };
+        }
+        else{
+          query.deliveryStatus=deliveryStatus;
         }
         const result = await parcelCollection.find(query).toArray();
         res.send(result);
