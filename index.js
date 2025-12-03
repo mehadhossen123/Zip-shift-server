@@ -365,6 +365,8 @@ async function run() {
       try {
         const parcel = req.body;
         parcel.createdAt = new Date();
+        
+        logTracking(trackingId,"parcel-created")
         const result = await parcelCollection.insertOne(parcel);
         res.send({
           success: true,
