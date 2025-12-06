@@ -25,7 +25,12 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: ["https://zap-shift-2d7e7.web.app", "http://localhost:5173"],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Firebase initialization
@@ -69,7 +74,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     //========&&& create database and collection===========$$$
     const database = client.db("Zap_shift_db");
@@ -232,7 +237,9 @@ async function run() {
       try {
         const email = req.params.email;
         const query = { email };
+        console.log(email)
         const result = await userCollection.findOne(query);
+        console.log(result)
         res.status(201).send({ role: result?.role || "user" });
       } catch (error) {
         res.status(500).send({
