@@ -7,7 +7,12 @@ const crypto = require("crypto");
 
 // Firebase
 const admin = require("firebase-admin");
-const serviceAccount = require("./zap-shift.json");
+// const serviceAccount = require("./zap-shift.json");
+
+// const serviceAccount = require("./firebase-admin-key.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 
 // MongoDB
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -237,6 +242,9 @@ async function run() {
       }
     });
 
+   
+
+
     //==========Riders related aip=========
 
     app.post("/riders", async (req, res) => {
@@ -361,24 +369,49 @@ async function run() {
     });
 
     // Post parcel
+    // app.post("/parcels", async (req, res) => {
+    //   try {
+    //     const parcel = req.body;
+    //     parcel.createdAt = new Date();
+        
+    //     logTracking(trackingId,"parcel-created")
+    //     const result = await parcelCollection.insertOne(parcel);
+    //     res.send({
+    //       success: true,
+    //       message: "The parcel is added successfully",
+    //       data: result,
+    //     });
+    //   } catch (error) {
+    //     res
+    //       .status(500)
+    //       .send({ success: false, message: "Internal server error" });
+    //   }
+    // });
+
     app.post("/parcels", async (req, res) => {
       try {
         const parcel = req.body;
         parcel.createdAt = new Date();
-        
-        logTracking(trackingId,"parcel-created")
+
+        const trackingId = "TRK-" + Date.now();
+
+        logTracking(trackingId, "parcel-created");
+
         const result = await parcelCollection.insertOne(parcel);
+
         res.send({
           success: true,
           message: "The parcel is added successfully",
           data: result,
         });
       } catch (error) {
+        console.log(error);
         res
           .status(500)
           .send({ success: false, message: "Internal server error" });
       }
     });
+
 
 
     // Get parcels for the assigned riders and specific riders to completed there task 
@@ -422,7 +455,7 @@ async function run() {
       res.send(result)
      });
 
-    app.get("/riders/delivery-per-day",verifyFToken, async(req,res)=>{
+    app.get("/riders/delivery-per-day", async(req,res)=>{
       const email=req.query.email
       const pipeline = [
         {
