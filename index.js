@@ -407,6 +407,32 @@ async function run() {
       }
     });
 
+    // @@@@@@@ Aggregation pipeline  parcel related api 
+     app.get("/parcel/delivery-Status/stats",async(req,res)=>{
+
+      const pipeline = [
+        {
+          $group: { _id: "$deliveryStatus" ,count:{$sum:1}},
+        },
+        {
+          $project:{status:"$_id",count:1}
+        }
+      ];
+      const result =await parcelCollection.aggregate(pipeline).toArray()
+      res.send(result)
+     });
+
+    app.get("/riders/delivery-per-day",verifyFToken, async(req,res)=>{
+      const email=req.query.email
+      const pipeline = [
+        {
+          $match: { riderEmail: email, deliveryStatus: "parcel_delivered" },
+        },
+      ];
+      const result=await parcelCollection.aggregate(pipeline).toArray()
+      res.send(result)
+    })
+
 
     // Patch parcel
     app.patch("/parcels/:id", async (req, res) => {
@@ -626,10 +652,10 @@ async function run() {
     });
 
     // MongoDB ping
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
   }
 }
